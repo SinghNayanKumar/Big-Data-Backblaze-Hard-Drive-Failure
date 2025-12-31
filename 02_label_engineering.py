@@ -74,6 +74,8 @@ df = df.select(base_cols + smart_cols)
 # ------------------------------------------------------------------------------
 # 4. Explicit Type Casting (Avoid Silent Spark Issues)
 # ------------------------------------------------------------------------------
+
+# Enforce correct data types
 df = (
     df
     .withColumn("date", F.col("date").cast("date"))
@@ -85,7 +87,7 @@ for c in smart_cols:
 
 
 # ------------------------------------------------------------------------------
-# 5. Repartition BEFORE Windowing (OOM Fix #1)
+# 5. Repartition BEFORE Windowing (OOM Fix)
 # ------------------------------------------------------------------------------
 # Why:
 # - Window functions require shuffle + sort
@@ -151,7 +153,7 @@ df.filter(F.col("serial_number") == example_serial) \
 
 
 # ------------------------------------------------------------------------------
-# 10. Parquet Write Tuning (OOM Fix #2)
+# 10. Parquet Write Tuning (OOM Fix)
 # ------------------------------------------------------------------------------
 # We tune Parquet writer settings to:
 # - Reduce heap pressure

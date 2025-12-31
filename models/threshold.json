@@ -1,0 +1,6 @@
+{
+  "threshold": 2.015608515648637e-07,
+  "target_recall": 0.8,
+  "metric": "PR-AUC",
+  "notes": "Chosen for high-recall failure detection"
+}
