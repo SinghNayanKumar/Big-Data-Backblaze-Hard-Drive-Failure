@@ -1,6 +1,7 @@
 {
-  "threshold": 0.5,
+  "threshold": 0.13615384697914124,
   "target_recall": 0.8,
-  "metric": "PR-AUC",
-  "notes": "Chosen for high-recall failure detection"
+  "positives_seen": 292,
+  "negative_sample_size": 200000,
+  "notes": "Recall-driven threshold selection using Spark-first strategy"
 }
