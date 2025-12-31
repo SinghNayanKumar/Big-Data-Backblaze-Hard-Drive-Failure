@@ -38,6 +38,8 @@ from pyspark.ml.evaluation import BinaryClassificationEvaluator
 import pandas as pd
 import numpy as np
 import xgboost as xgb
+import os
+import json
 
 from sklearn.metrics import average_precision_score
 
@@ -173,48 +175,91 @@ print(f"\nValidation PR-AUC: {val_pr_auc:.4f}")
 # -------------------------------
 # Convert a SMALL subset of test predictions for threshold tuning
 # (safe, controlled, intentional)
-threshold_pd = (
-    val_scored
-    .select(TARGET, "failure_probability")
-    .sample(fraction=0.05, seed=42)
+
+# ===========================================================
+# Spark-First Threshold Selection (Rare Event Safe)
+# ===========================================================
+
+
+TARGET = "failure_next_24h"
+PROB_COL = "failure_probability"
+
+# -------------------------------
+# Separate Positives & Negatives
+# -------------------------------
+val_pos = val_scored.filter(F.col(TARGET) == 1)
+val_neg = val_scored.filter(F.col(TARGET) == 0)
+
+pos_count = val_pos.count()
+neg_count = val_neg.count()
+
+print(f"Validation positives: {pos_count}")
+print(f"Validation negatives: {neg_count}")
+
+# -------------------------------
+# Collect ALL Positives (SAFE)
+# -------------------------------
+# Positives are tiny (≈250 rows)
+pos_pd = (
+    val_pos
+    .select(PROB_COL)
     .toPandas()
 )
 
+# -------------------------------
+# Sample Negatives (Count-Based)
+# -------------------------------
+NEG_SAMPLE_SIZE = 200_000  # memory-safe
 
+neg_pd = (
+    val_neg
+    .orderBy(F.rand(seed=42))
+    .limit(NEG_SAMPLE_SIZE)
+    .select(PROB_COL)
+    .toPandas()
+)
 
-from sklearn.metrics import precision_recall_curve
+# -------------------------------
+# Recall-Driven Threshold Selection
+# -------------------------------
+# Recall depends ONLY on positives
 
-precision, recall, thresholds = precision_recall_curve(
-    threshold_pd[TARGET],
-    threshold_pd["failure_probability"]
+target_recall = 0.80
+
+pos_scores = np.sort(np.asarray(pos_pd[PROB_COL].values, dtype=float))[::-1]
+
+idx = int(len(pos_scores) * target_recall)
+chosen_threshold = float(pos_scores[idx])
+
+print(
+    f"\nChosen threshold for {target_recall*100:.0f}% recall: "
+    f"{chosen_threshold:.6f}"
 )
 
 
-# Choose threshold for high recall (failure detection priority)
-target_recall = 0.80
-idx = next(i for i, r in enumerate(recall) if r >= target_recall)
-chosen_threshold = thresholds[idx]
+# -------------------------------
+# Persist Threshold Metadata
+# -------------------------------
+threshold_metadata = {
+    "threshold": chosen_threshold,
+    "target_recall": target_recall,
+    "positives_seen": pos_count,
+    "negative_sample_size": NEG_SAMPLE_SIZE,
+    "notes": "Recall-driven threshold selection using Spark-first strategy"
+}
 
-print(f"\nChosen threshold for {target_recall*100:.0f}% recall: {chosen_threshold:.4f}")
+os.makedirs("models", exist_ok=True)
+
+with open("models/threshold.json", "w") as f:
+    json.dump(threshold_metadata, f, indent=2)
+
+print("Threshold metadata saved to models/threshold.json")
 
 # -------------------------------
 # Save Model
 # -------------------------------
 model.get_booster().save_model("models/xgboost_backblaze.json")
 print("Model saved to models/xgboost_backblaze.json")
-
-#Save Threshold Metadata
-import json
-
-threshold_metadata = {
-    "threshold": float(chosen_threshold),
-    "target_recall": target_recall,
-    "metric": "PR-AUC",
-    "notes": "Chosen for high-recall failure detection"
-}
-
-with open("models/threshold.json", "w") as f:
-    json.dump(threshold_metadata, f, indent=2)
 
 
 spark.stop()
