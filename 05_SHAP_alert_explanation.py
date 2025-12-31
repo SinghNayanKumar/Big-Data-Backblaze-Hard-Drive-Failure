@@ -161,8 +161,8 @@ shap_df = pd.DataFrame(
 shap_df["failure_probability"] = alerts_pd["failure_probability"].values
 shap_df[TARGET] = alerts_pd[TARGET].values
 
-shap_df.to_parquet(
-    "outputs/shap_alert_values.parquet",
+shap_df.to_csv(
+    "outputs/shap_alert_values.csv",
     index=False
 )
 
